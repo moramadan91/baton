@@ -1,0 +1,7 @@
+{
+  "name": "baton",
+  "version": "0.1.0",
+  "description": "Opus plans, Sonnet and Haiku run the commands, Codex writes the code, Gemini reviews; a live pane shows every model's progress, tokens and your usage limits",
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}
