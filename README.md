@@ -7,12 +7,11 @@
 | Opus (your main chat) | plans, decides, reviews |
 | Haiku (`baton:runner`) | commands, tests, builds, searches |
 | Sonnet (`baton:worker`) | multi-step chores that need judgement |
-| Codex (OpenAI) | writes and fixes code |
-| Gemini (Google) | read-only review |
+| Codex (OpenAI) | writes and fixes code, reviews diffs read-only |
 
 The **Baton** pane shows, live:
 - the plan, each step's owner and timer, overall percent and elapsed time;
-- who is working now: Codex's file and command, files written of planned, Gemini's reads, each Claude subagent's model, task and tokens;
+- who is working now: Codex's file and command, files written of planned, each Claude subagent's model, task and tokens;
 - this task's Claude 5-hour and weekly limit before and after, and tokens per model;
 - session tokens per model and your current limits.
 
@@ -25,11 +24,11 @@ The **Baton** pane shows, live:
 
 Then type `/baton` in any chat and say what you want built. `/baton-pane` reopens the pane.
 
-Or drop [`Baton-Start.md`](Baton-Start.md) into any chat: Claude installs Baton if it is missing, checks Codex and Gemini, and turns Baton on.
+Or drop [`Baton-Start.md`](Baton-Start.md) into any chat: Claude installs Baton if it is missing, checks Codex, and turns Baton on.
 
 ## Needs
-- [Codex CLI](https://github.com/openai/codex) logged in with ChatGPT, and [Gemini CLI](https://github.com/google-gemini/gemini-cli) logged in with Google, both on your PATH. No API keys.
-- A Claude Code build that loads plugin hooks modules (the pane and the Codex/Gemini tools).
+- [Codex CLI](https://github.com/openai/codex) logged in with ChatGPT, on your PATH. No API keys.
+- A Claude Code build that loads plugin hooks modules (the pane and the Codex tool).
 
 Optional, in `~/.claude/settings.json` under `env`:
 - `BATON_CODEX_MODEL`: the Codex model to use.

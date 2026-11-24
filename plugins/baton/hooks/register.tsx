@@ -10,13 +10,13 @@ const fresh: Run = { on: false, title: '', startedAt: 0, steps: [], ext: [], sub
 const run = atom({ plugin: 'baton', key: 'run' } as const, fresh, { shape: 'run-2' })
 const tick = atom({ plugin: 'baton', key: 'tick' } as const, 0)
 
-const OWNERS: Owner[] = ['opus', 'sonnet', 'haiku', 'codex', 'gemini']
+const OWNERS: Owner[] = ['opus', 'sonnet', 'haiku', 'codex']
 const mainUse: Record<string, Use> = {} // main thread, per model
 const agentUse = new Map<string, { model: string; u: Use }[]>() // subagent id -> its usage, kept after it ends
 const stepOf = new Map<string, number>() // subagent id -> plan step (from "S3 ..." in its description)
 const locks = new Set<string>()
 
-const fam = (m = '') => (/opus/i.test(m) ? 'Opus' : /sonnet/i.test(m) ? 'Sonnet' : /haiku/i.test(m) ? 'Haiku' : /gpt|codex|o\d/i.test(m) ? 'Codex' : /gemini/i.test(m) ? 'Gemini' : m || '?')
+const fam = (m = '') => (/opus/i.test(m) ? 'Opus' : /sonnet/i.test(m) ? 'Sonnet' : /haiku/i.test(m) ? 'Haiku' : /gpt|codex|o\d/i.test(m) ? 'Codex' : m || '?')
 const ownerName = (o: Owner) => o[0]!.toUpperCase() + o.slice(1)
 const add = (a: Use, u: any) => ({ input: a.input + (u.input_tokens || 0), output: a.output + (u.output_tokens || 0), cacheRead: a.cacheRead + (u.cache_read_input_tokens || u.cached_input_tokens || u.cached || 0), cacheWrite: a.cacheWrite + (u.cache_creation_input_tokens || 0) })
 const k = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(n >= 1e4 ? 0 : 1)}k` : String(n))
@@ -49,7 +49,7 @@ const limName = (kind: string) => (kind === 'five_hour' ? '5-hour' : kind === 's
 // what this task cost: limits before and now/after, tokens per model since the plan was set
 function taskReport(r: Run) {
   const used = Object.entries(r.byModel).map(([m, u]) => [m, sub(u, r.base[m])] as const).filter(([, u]) => u.input + u.output + u.cacheRead + u.cacheWrite > 0)
-  const ext = (['codex', 'gemini'] as const).map(w => [w === 'codex' ? 'Codex' : 'Gemini', r.ext.filter(x => x.who === w).reduce((a, x) => ({ i: a.i + x.tokensIn, o: a.o + x.tokensOut }), { i: 0, o: 0 })] as const).filter(([, t]) => t.i + t.o > 0)
+  const ext = (['codex'] as const).map(w => ['Codex', r.ext.filter(x => x.who === w).reduce((a, x) => ({ i: a.i + x.tokensIn, o: a.o + x.tokensOut }), { i: 0, o: 0 })] as const).filter(([, t]) => t.i + t.o > 0)
   const after = r.limits1 ?? r.limits
   const limits = after.map(l => { const b = r.limits0.find(x => x.kind === l.kind); return { name: limName(l.kind), from: b?.pct, to: l.pct, delta: b ? Math.round((l.pct - b.pct) * 10) / 10 : undefined, resetsAt: l.resetsAt } })
   const cost = r.cost1 ?? r.costUsd, cost0 = r.cost0
@@ -141,38 +141,6 @@ async function runCodex($: EngineInterface, a: any) {
   ].join('\n') }
 }
 
-// Gemini reviews, read-only (plan mode).
-async function runGemini($: EngineInterface, a: any) {
-  const cwd = String(a.cwd || '')
-  if (!cwd.startsWith('/')) return { result: 'cwd must be the absolute project path.' }
-  const id = await startExt($, 'gemini', { ...a, files: [] })
-  const argv = ['env', '-u', 'GEMINI_API_KEY', '-u', 'GOOGLE_API_KEY', 'GEMINI_CLI_TRUST_WORKSPACE=true', 'gemini', '--approval-mode', 'plan', '-o', 'stream-json', '-p', String(a.task)]
-  let buf = '', err = '', text = '', code: number | null = null
-  try {
-    const p = $.process.spawn({ argv, cwd, input: '' })
-    while (true) {
-      const n = await p.next()
-      if (n.done) { code = n.value.code; break }
-      if (n.value.stream === 'stderr') { err = (err + n.value.text).slice(-3000); continue }
-      buf += n.value.text
-      const lines = buf.split('\n'); buf = lines.pop() || ''
-      for (const line of lines) {
-        let ev: any; try { ev = JSON.parse(line) } catch { continue }
-        if (ev.type === 'init') await patchExt($, id, () => ({ model: ev.model, now: 'thinking' }))
-        else if (ev.type === 'tool_use') {
-          const p0 = ev.parameters || {}, arg = p0.file_path || p0.path || p0.pattern || p0.dir_path || ''
-          await patchExt($, id, x => ({ tools: x.tools + 1, now: `${ev.tool_name} ${short(base(String(arg)), 30)}` }))
-        } else if (ev.type === 'message' && ev.role === 'assistant') { text += ev.content || ''; await patchExt($, id, () => ({ now: `writing · ${short(text.split('\n').pop() || '', 36)}` })) }
-        else if (ev.type === 'result' && ev.stats) await patchExt($, id, () => ({ tokensIn: ev.stats.input_tokens || 0, tokensOut: ev.stats.output_tokens || 0 }))
-      }
-    }
-  } catch (e: any) { err += `\n${e?.message || e}` }
-  const ok = code === 0
-  await patchExt($, id, () => ({ endedAt: Date.now(), ok, now: ok ? 'finished' : `failed (exit ${code})` }))
-  await setStep($, a.step, ok ? 'done' : 'failed')
-  return { result: ok ? text || '(empty review)' : `Gemini FAILED (exit ${code}). stderr tail:\n${err.slice(-1200)}` }
-}
-
 // Subagents, usage and limits: read every 2 s while Baton is on.
 async function poll($: EngineInterface, withUsage: boolean) {
   const agents = await $.agent.list()
@@ -204,7 +172,7 @@ export const register: Register = on => {
     const step = { type: 'integer', description: 'The plan step this run belongs to (1-based); the pane marks it running, then done or failed.' }
     await $.tool.register({
       name: 'plan',
-      description: 'Baton: set the plan shown in the live pane (replaces the current one). Each step has an owner: opus (decisions, review), sonnet (multi-step chores), haiku (commands, tests, reads), codex (writes code), gemini (read-only review).',
+      description: 'Baton: set the plan shown in the live pane (replaces the current one). Each step has an owner: opus (decisions, review), sonnet (multi-step chores), haiku (commands, tests, reads), codex (writes code).',
       inputSchema: { type: 'object', required: ['title', 'steps'], properties: {
         title: { type: 'string' },
         steps: { type: 'array', items: { type: 'object', required: ['title', 'owner'], properties: { title: { type: 'string' }, owner: { type: 'string', enum: OWNERS } } } },
@@ -224,11 +192,6 @@ export const register: Register = on => {
         files: { type: 'array', items: { type: 'string' }, description: 'Files (or folders) Codex may write, relative to cwd.' },
         step,
       } },
-    })
-    await $.tool.register({
-      name: 'gemini',
-      description: 'Baton: have Gemini (Google, the user\'s login) review read-only: a diff, an architecture, performance or alternatives. Blocks until it ends and returns its review.',
-      inputSchema: { type: 'object', required: ['task', 'cwd'], properties: { task: { type: 'string' }, cwd: { type: 'string', description: 'Absolute project path.' }, step } },
     })
     let n = 0
     $.clock.every(1000, async () => {
@@ -267,7 +230,6 @@ export const register: Register = on => {
     return { result: r.endedAt ? `All steps finished. Give the user this report:\n${reportText(r)}` : 'ok' }
   })
   on('tool.run', { tool: 'mcp__baton__codex' }, ($, e) => runCodex($, e))
-  on('tool.run', { tool: 'mcp__baton__gemini' }, ($, e) => runGemini($, e))
 
   on('agent.spawn', async ($, e, next) => {
     const r = await next(e)
@@ -335,9 +297,9 @@ export const register: Register = on => {
           {!live.length && !subsLive.length && <Text dimColor>nobody · Opus is thinking or waiting</Text>}
           {live.map(x => (
             <Box flexDirection="column">
-              <Text wrap="truncate-end"><Text color="warning">▶ {x.who === 'codex' ? 'Codex' : 'Gemini'}</Text>{x.step ? <Text dimColor> S{x.step}</Text> : ''} <Text dimColor mono tabular>{clock(now - x.startedAt)}</Text> {x.now}</Text>
+              <Text wrap="truncate-end"><Text color="warning">▶ Codex</Text>{x.step ? <Text dimColor> S{x.step}</Text> : ''} <Text dimColor mono tabular>{clock(now - x.startedAt)}</Text> {x.now}</Text>
               <Text dimColor mono tabular wrap="truncate-end">
-                {'  '}{x.who === 'codex' ? `files ${x.planned.length ? `${Math.min(x.files.length, x.planned.length)}/${x.planned.length}` : x.files.length} · ${x.cmds} cmds` : `${x.tools} reads`} · {k(x.tokensIn)} in / {k(x.tokensOut)} out
+                {'  '}files {x.planned.length ? `${Math.min(x.files.length, x.planned.length)}/${x.planned.length}` : x.files.length} · {x.cmds} cmds · {k(x.tokensIn)} in / {k(x.tokensOut)} out
               </Text>
             </Box>
           ))}
@@ -350,7 +312,7 @@ export const register: Register = on => {
           <Box flexDirection="column">
             <Text bold>Just finished</Text>
             {recent.map(x => (
-              <Text dimColor wrap="truncate-end"><Text color={x.ok ? 'success' : 'error'}>{x.ok ? '✓' : '✗'}</Text> {x.who === 'codex' ? 'Codex' : 'Gemini'} {clock((x.endedAt ?? now) - x.startedAt)} · {x.who === 'codex' ? `${x.files.length} files` : `${x.tools} reads`} · {x.task}</Text>
+              <Text dimColor wrap="truncate-end"><Text color={x.ok ? 'success' : 'error'}>{x.ok ? '✓' : '✗'}</Text> Codex {clock((x.endedAt ?? now) - x.startedAt)} · {x.files.length} files · {x.task}</Text>
             ))}
             {subsDone.map(s => (
               <Text dimColor wrap="truncate-end"><Text color="success">✓</Text> {s.model} {s.type.replace(/^baton:/, '')} {clock((s.endedAt ?? now) - s.startedAt)} · {s.label}</Text>
@@ -383,7 +345,7 @@ export const register: Register = on => {
             const u = r.byModel[m]!, all = u.input + u.output + u.cacheRead + u.cacheWrite
             return <Text mono tabular wrap="truncate-end">{m.padEnd(7)}{k(u.input + u.cacheWrite).padStart(6)} in {k(u.cacheRead).padStart(6)} cached {k(u.output).padStart(6)} out <Text dimColor>{totalTok ? Math.round((all / totalTok) * 100) : 0}%</Text></Text>
           })}
-          {(['codex', 'gemini'] as const).map(who => { const t = extTok(who); return t.i + t.o > 0 ? <Text mono tabular>{(who === 'codex' ? 'Codex' : 'Gemini').padEnd(7)}{k(t.i).padStart(6)} in {''.padStart(13)}{k(t.o).padStart(6)} out <Text dimColor>own plan</Text></Text> : null })}
+          {(['codex'] as const).map(who => { const t = extTok(who); return t.i + t.o > 0 ? <Text mono tabular>{'Codex'.padEnd(7)}{k(t.i).padStart(6)} in {''.padStart(13)}{k(t.o).padStart(6)} out <Text dimColor>own plan</Text></Text> : null })}
           {r.costUsd !== undefined && <Text dimColor>Claude session ~${r.costUsd.toFixed(2)} (estimate, not your bill)</Text>}
         </Box>
 
