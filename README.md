@@ -25,6 +25,8 @@ The **Baton** pane shows, live:
 
 Then type `/baton` in any chat and say what you want built. `/baton-pane` reopens the pane.
 
+Or drop [`Baton-Start.md`](Baton-Start.md) into any chat: Claude installs Baton if it is missing, checks Codex and Gemini, and turns Baton on.
+
 ## Needs
 - [Codex CLI](https://github.com/openai/codex) logged in with ChatGPT, and [Gemini CLI](https://github.com/google-gemini/gemini-cli) logged in with Google, both on your PATH. No API keys.
 - A Claude Code build that loads plugin hooks modules (the pane and the Codex/Gemini tools).
