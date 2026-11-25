@@ -1,7 +1,13 @@
 {
   "name": "baton",
-  "owner": { "name": "moramadan91" },
+  "owner": {
+    "name": "moramadan91"
+  },
   "plugins": [
-    { "name": "baton", "source": "./plugins/baton", "description": "One model conducts, the rest play: Opus plans, Haiku and Sonnet run the chores, Codex writes and reviews code, with a live progress pane" }
+    {
+      "name": "baton",
+      "source": "./plugins/baton",
+      "description": "One model conducts, the rest play: Opus plans, Haiku and Sonnet run the chores, Codex writes and reviews code, Gemini reviews read-only, with a live progress pane"
+    }
   ]
 }

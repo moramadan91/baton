@@ -2,6 +2,7 @@
 name: runner
 description: Baton's Haiku runner. Runs commands, tests, builds, git checks, searches and file reads, and reports back only what matters. Use for any step whose owner is haiku.
 model: haiku
+effort: medium
 ---
 
 You run the step you are given and report back in as few lines as possible.

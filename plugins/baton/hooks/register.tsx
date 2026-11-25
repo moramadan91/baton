@@ -10,7 +10,7 @@ const fresh: Run = { on: false, title: '', startedAt: 0, steps: [], ext: [], sub
 const run = atom({ plugin: 'baton', key: 'run' } as const, fresh, { shape: 'run-2' })
 const tick = atom({ plugin: 'baton', key: 'tick' } as const, 0)
 
-const OWNERS: Owner[] = ['opus', 'sonnet', 'haiku', 'codex']
+const OWNERS: Owner[] = ['opus', 'sonnet', 'haiku', 'codex', 'gemini']
 const mainUse: Record<string, Use> = {} // main thread, per model
 const agentUse = new Map<string, { model: string; u: Use }[]>() // subagent id -> its usage, kept after it ends
 const stepOf = new Map<string, number>() // subagent id -> plan step (from "S3 ..." in its description)
@@ -49,7 +49,7 @@ const limName = (kind: string) => (kind === 'five_hour' ? '5-hour' : kind === 's
 // what this task cost: limits before and now/after, tokens per model since the plan was set
 function taskReport(r: Run) {
   const used = Object.entries(r.byModel).map(([m, u]) => [m, sub(u, r.base[m])] as const).filter(([, u]) => u.input + u.output + u.cacheRead + u.cacheWrite > 0)
-  const ext = (['codex'] as const).map(w => ['Codex', r.ext.filter(x => x.who === w).reduce((a, x) => ({ i: a.i + x.tokensIn, o: a.o + x.tokensOut }), { i: 0, o: 0 })] as const).filter(([, t]) => t.i + t.o > 0)
+  const ext = (['codex', 'gemini'] as const).map(w => [w === 'codex' ? 'Codex' : 'Gemini', r.ext.filter(x => x.who === w).reduce((a, x) => ({ i: a.i + x.tokensIn, o: a.o + x.tokensOut }), { i: 0, o: 0 })] as const).filter(([, t]) => t.i + t.o > 0)
   const after = r.limits1 ?? r.limits
   const limits = after.map(l => { const b = r.limits0.find(x => x.kind === l.kind); return { name: limName(l.kind), from: b?.pct, to: l.pct, delta: b ? Math.round((l.pct - b.pct) * 10) / 10 : undefined, resetsAt: l.resetsAt } })
   const cost = r.cost1 ?? r.costUsd, cost0 = r.cost0
@@ -141,6 +141,30 @@ async function runCodex($: EngineInterface, a: any) {
   ].join('\n') }
 }
 
+// Gemini reviews/plans read-only: one headless `gemini --approval-mode plan` run on the user's Google login.
+async function runGemini($: EngineInterface, a: any) {
+  const cwd = String(a.cwd || '')
+  if (!cwd.startsWith('/')) return { result: 'cwd must be the absolute project path.' }
+  const id = await startExt($, 'gemini', { ...a, files: [] })
+  await patchExt($, id, () => ({ now: 'thinking', model: 'gemini' }))
+  const argv = ['env', '-u', 'GEMINI_API_KEY', '-u', 'GOOGLE_API_KEY', 'GEMINI_CLI_TRUST_WORKSPACE=true',
+    'gemini', '--approval-mode', 'plan', '-p', String(a.task)]
+  let out = '', err = '', code: number | null = null
+  try {
+    const p = $.process.spawn({ argv, cwd, input: '' })
+    while (true) {
+      const n = await p.next()
+      if (n.done) { code = n.value.code; break }
+      if (n.value.stream === 'stderr') err = (err + n.value.text).slice(-3000)
+      else out += n.value.text
+    }
+  } catch (e: any) { err += `\n${e?.message || e}` }
+  const ok = code === 0
+  await patchExt($, id, () => ({ endedAt: Date.now(), ok, now: ok ? 'finished' : `failed (exit ${code})` }))
+  await setStep($, a.step, ok ? 'done' : 'failed')
+  return { result: ok ? `Gemini finished.\nReport:\n${out.trim() || '(empty)'}` : `Gemini FAILED (exit ${code}). stderr tail:\n${err.slice(-1200)}` }
+}
+
 // Subagents, usage and limits: read every 2 s while Baton is on.
 async function poll($: EngineInterface, withUsage: boolean) {
   const agents = await $.agent.list()
@@ -193,6 +217,15 @@ export const register: Register = on => {
         step,
       } },
     })
+    await $.tool.register({
+      name: 'gemini',
+      description: 'Baton: have Gemini (Google, the user\'s Gemini CLI login) review code, plans or diffs read-only (it edits nothing). Second opinion next to Codex. Blocks until it ends and returns its report.',
+      inputSchema: { type: 'object', required: ['task', 'cwd'], properties: {
+        task: { type: 'string', description: 'What to review or answer, with the files to read and what to report.' },
+        cwd: { type: 'string', description: 'Absolute project path.' },
+        step,
+      } },
+    })
     let n = 0
     $.clock.every(1000, async () => {
       const r = await read($, run)
@@ -230,6 +263,7 @@ export const register: Register = on => {
     return { result: r.endedAt ? `All steps finished. Give the user this report:\n${reportText(r)}` : 'ok' }
   })
   on('tool.run', { tool: 'mcp__baton__codex' }, ($, e) => runCodex($, e))
+  on('tool.run', { tool: 'mcp__baton__gemini' }, ($, e) => runGemini($, e))
 
   on('agent.spawn', async ($, e, next) => {
     const r = await next(e)
@@ -297,7 +331,7 @@ export const register: Register = on => {
           {!live.length && !subsLive.length && <Text dimColor>nobody · Opus is thinking or waiting</Text>}
           {live.map(x => (
             <Box flexDirection="column">
-              <Text wrap="truncate-end"><Text color="warning">▶ Codex</Text>{x.step ? <Text dimColor> S{x.step}</Text> : ''} <Text dimColor mono tabular>{clock(now - x.startedAt)}</Text> {x.now}</Text>
+              <Text wrap="truncate-end"><Text color="warning">▶ {x.who === 'gemini' ? 'Gemini' : 'Codex'}</Text>{x.step ? <Text dimColor> S{x.step}</Text> : ''} <Text dimColor mono tabular>{clock(now - x.startedAt)}</Text> {x.now}</Text>
               <Text dimColor mono tabular wrap="truncate-end">
                 {'  '}files {x.planned.length ? `${Math.min(x.files.length, x.planned.length)}/${x.planned.length}` : x.files.length} · {x.cmds} cmds · {k(x.tokensIn)} in / {k(x.tokensOut)} out
               </Text>
@@ -312,7 +346,7 @@ export const register: Register = on => {
           <Box flexDirection="column">
             <Text bold>Just finished</Text>
             {recent.map(x => (
-              <Text dimColor wrap="truncate-end"><Text color={x.ok ? 'success' : 'error'}>{x.ok ? '✓' : '✗'}</Text> Codex {clock((x.endedAt ?? now) - x.startedAt)} · {x.files.length} files · {x.task}</Text>
+              <Text dimColor wrap="truncate-end"><Text color={x.ok ? 'success' : 'error'}>{x.ok ? '✓' : '✗'}</Text> {x.who === 'gemini' ? 'Gemini' : 'Codex'} {clock((x.endedAt ?? now) - x.startedAt)} · {x.files.length} files · {x.task}</Text>
             ))}
             {subsDone.map(s => (
               <Text dimColor wrap="truncate-end"><Text color="success">✓</Text> {s.model} {s.type.replace(/^baton:/, '')} {clock((s.endedAt ?? now) - s.startedAt)} · {s.label}</Text>
@@ -345,7 +379,7 @@ export const register: Register = on => {
             const u = r.byModel[m]!, all = u.input + u.output + u.cacheRead + u.cacheWrite
             return <Text mono tabular wrap="truncate-end">{m.padEnd(7)}{k(u.input + u.cacheWrite).padStart(6)} in {k(u.cacheRead).padStart(6)} cached {k(u.output).padStart(6)} out <Text dimColor>{totalTok ? Math.round((all / totalTok) * 100) : 0}%</Text></Text>
           })}
-          {(['codex'] as const).map(who => { const t = extTok(who); return t.i + t.o > 0 ? <Text mono tabular>{'Codex'.padEnd(7)}{k(t.i).padStart(6)} in {''.padStart(13)}{k(t.o).padStart(6)} out <Text dimColor>own plan</Text></Text> : null })}
+          {(['codex', 'gemini'] as const).map(who => { const t = extTok(who); return t.i + t.o > 0 ? <Text key={who} mono tabular>{(who === 'codex' ? 'Codex' : 'Gemini').padEnd(7)}{k(t.i).padStart(6)} in {''.padStart(13)}{k(t.o).padStart(6)} out <Text dimColor>own plan</Text></Text> : null })}
           {r.costUsd !== undefined && <Text dimColor>Claude session ~${r.costUsd.toFixed(2)} (estimate, not your bill)</Text>}
         </Box>
 

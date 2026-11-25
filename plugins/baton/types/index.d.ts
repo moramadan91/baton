@@ -1,9 +1,9 @@
-export type Owner = 'opus' | 'sonnet' | 'haiku' | 'codex'
+export type Owner = 'opus' | 'sonnet' | 'haiku' | 'codex' | 'gemini'
 export type StepStatus = 'todo' | 'running' | 'done' | 'failed' | 'skipped'
 export type PlanStep = { title: string; owner: Owner; status: StepStatus; note?: string; startedAt?: number; endedAt?: number }
 // one Codex run started through the baton tools
 export type Ext = {
-  id: string; who: 'codex'; step?: number; task: string; startedAt: number; endedAt?: number; ok?: boolean
+  id: string; who: 'codex' | 'gemini'; step?: number; task: string; startedAt: number; endedAt?: number; ok?: boolean
   now: string; files: string[]; planned: string[]; cmds: number; tools: number; tokensIn: number; tokensOut: number; model?: string
 }
 // one Claude subagent, as $.agent.list reports it

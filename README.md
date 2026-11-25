@@ -8,6 +8,9 @@
 | Haiku (`baton:runner`) | commands, tests, builds, searches |
 | Sonnet (`baton:worker`) | multi-step chores that need judgement |
 | Codex (OpenAI) | writes and fixes code, reviews diffs read-only |
+| Gemini (Google, `mcp__baton__gemini`) | read-only second review of plans and diffs, next to Codex |
+
+Every model runs on **medium** effort: the Haiku and Sonnet agents set `effort: medium`, Codex uses `BATON_CODEX_EFFORT` (default `medium`), and for the main chat set `"effortLevel": "medium"` in `~/.claude/settings.json`.
 
 The **Baton** pane shows, live:
 - the plan, each step's owner and timer, overall percent and elapsed time;
@@ -28,6 +31,7 @@ Or drop [`Baton-Start.md`](Baton-Start.md) into any chat: Claude installs Baton 
 
 ## Needs
 - [Codex CLI](https://github.com/openai/codex) logged in with ChatGPT, on your PATH. No API keys.
+- Optional: [Gemini CLI](https://github.com/google-gemini/gemini-cli) logged in with your Google account, for the Gemini reviewer. No API key (Baton unsets `GEMINI_API_KEY`/`GOOGLE_API_KEY` and runs it in read-only plan mode).
 - A Claude Code build that loads plugin hooks modules (the pane and the Codex tool).
 
 Optional, in `~/.claude/settings.json` under `env`:

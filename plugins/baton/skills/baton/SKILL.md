@@ -8,13 +8,14 @@ description: Turn on the Baton workflow for this chat. You (the main model) only
 You are the conductor. Spend your own tokens on thinking, never on doing. Keep this workflow until the user says stop.
 
 ## 1. Start
-Load the tools in one call: ToolSearch `select:mcp__baton__plan,mcp__baton__step,mcp__baton__codex`.
+Load the tools in one call: ToolSearch `select:mcp__baton__plan,mcp__baton__step,mcp__baton__codex,mcp__baton__gemini`.
 If the user's request is not clear yet, ask before planning.
 
 ## 2. Plan (you)
 Read only what you need to decide. Call `mcp__baton__plan` with a short title and the steps. Each step names its owner:
 - `codex`: writing, editing, refactoring or bug-fixing code. Name the files.
-- `codex`, review: also for independent reviews of diffs. Say "review only, edit nothing" and pass `files: []`. When Codex is out of quota, a `baton:worker` (`sonnet`) reviews instead.
+- `codex`, review: also for independent reviews of diffs. Say "review only, edit nothing" and pass `files: []`.
+- `gemini`: read-only second reviewer next to Codex (plans, diffs, UI/code review). It never edits. When Codex is out of quota, Gemini reviews; a `baton:worker` (`sonnet`) is the last fallback.
 - `haiku`: running commands, tests, builds, searches and reading many files. Report back short.
 - `sonnet`: multi-step chores that need judgement but write no product code, such as a migration checklist or doc updates.
 - `opus`: only decisions, design and the final review (you).
@@ -24,6 +25,7 @@ The plan tool returns the Claude limits before the task: tell the user them in o
 ## 3. Delegate
 - **Codex**: call `mcp__baton__codex` with `{ task, files, cwd, step }`. Write the task like a ticket: goal, files, constraints, done criteria, and "report what you changed". `files` lists the files Codex may write; they are locked while it runs. Run two Codex calls in parallel only on different files.
 - **Review**: call `mcp__baton__codex` with `files: []` and a task that starts "review only, edit nothing"; give it the diff or the files to judge. If Codex is out of quota, use `baton:worker`.
+- **Gemini**: call `mcp__baton__gemini` with `{ task, cwd, step }` for a read-only review or second opinion; it can run in parallel with Codex.
 - **Haiku / Sonnet**: use the Agent tool with `subagent_type` `baton:runner` (Haiku) or `baton:worker` (Sonnet). Start the `description` with the step number, like `S3 run tests`. The pane then tracks it.
 - For your own steps, call `mcp__baton__step` with `running`, then `done`. Delegated steps update themselves.
 
