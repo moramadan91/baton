@@ -9,6 +9,8 @@ A Claude Code plugin that splits the work between models to save tokens, with a 
 
 The **Baton** pane shows the plan, which model works on what right now, Codex's files and commands, tokens per model, and your Claude 5-hour and weekly limits. It opens by itself when the plan is set. `/baton-pane` opens it by hand.
 
+When Claude's 5-hour or weekly limit reaches 95%, Baton writes a HANDOFF.md handoff in the project root (goal, done, numbered next steps, decisions, verify commands, open questions) so Codex or Muse can continue. Set `BATON_HANDOFF_PCT` to change the threshold. Works whether or not the pane is open.
+
 ## Use
 Type `/baton` in any chat, then say what you want built.
 

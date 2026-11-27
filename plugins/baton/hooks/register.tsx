@@ -16,6 +16,7 @@ const mainUse: Record<string, Use> = {} // main thread, per model
 const agentUse = new Map<string, { model: string; u: Use }[]>() // subagent id -> its usage, kept after it ends
 const stepOf = new Map<string, number>() // subagent id -> plan step (from "S3 ..." in its description)
 const locks = new Set<string>()
+const handedOff = new Set<string>()
 
 const fam = (m = '') => (/muse/i.test(m) ? 'Muse' : /opus/i.test(m) ? 'Opus' : /sonnet/i.test(m) ? 'Sonnet' : /haiku/i.test(m) ? 'Haiku' : /gpt|codex|o\d/i.test(m) ? 'Codex' : m || '?')
 const ownerName = (o: Owner) => o[0]!.toUpperCase() + o.slice(1)
@@ -357,6 +358,19 @@ export const register: Register = on => {
       mainUse[e.usage.model] = add(mainUse[e.usage.model] ?? zero(), e.usage)
       const u = e.usage
       await update($, run, r => ({ ...r, main: { ...add(r.main, u), turns: r.main.turns + 1, model: u.model } }))
+    }
+    return next(e)
+  })
+
+  on('session.measure', async ($, e, next) => {
+    const t = Number(await $.env.get('BATON_HANDOFF_PCT')) || 95
+    for (const l of (e as any).rateLimits || []) {
+      if ((l.kind !== 'five_hour' && !String(l.kind).startsWith('seven_day')) || l.percentUsed < t) continue
+      const key = `${l.kind}@${l.resetsAt ?? ''}`
+      if (handedOff.has(key)) continue
+      handedOff.add(key)
+      await $.session.append({ type: 'user', content: [{ type: 'text', text: `Baton limit guard: Claude's ${limName(l.kind)} limit is at ${l.percentUsed}%${l.resetsAt ? ` (resets ${hhmm(l.resetsAt)})` : ''}. Stop starting new work. Right now, in the current project root, write HANDOFF.md so Codex or Muse can continue without you: 1) the goal in the user's words, 2) what is done (with file paths), 3) what is left as numbered steps, each small enough for one agent run, 4) decisions made and constraints/rules to keep, 5) how to verify (commands, expected result), 6) open questions. Keep it under 150 lines. Then tell the user, in their language, that it is written and they can continue in that folder with \`muse "Read HANDOFF.md and continue from the first unfinished step"\` or \`codex "Read HANDOFF.md and continue from the first unfinished step"\`, and that you will review their work when the limit resets.` }] })
+      await $.ui.toast(`Baton: Claude ${limName(l.kind)} limit at ${l.percentUsed}% - writing HANDOFF.md`)
     }
     return next(e)
   })

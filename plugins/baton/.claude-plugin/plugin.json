@@ -1,6 +1,6 @@
 {
   "name": "baton",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Opus plans, Sonnet and Haiku run commands, Codex and Muse Code write and review code, and Gemini gives a read-only review. A live pane shows progress, tokens and usage limits.",
   "license": "MIT",
   "types": "./types/index.d.ts"
