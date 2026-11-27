@@ -19,7 +19,6 @@ Type `/baton` in any chat, then say what you want built.
 ## Needs
 - `codex` CLI logged in with ChatGPT, on PATH. No API keys.
 - Optional env (in `~/.claude/settings.json` under `env`): `BATON_CODEX_MODEL`, `BATON_CODEX_PROVIDER` (for example `openai` when your Codex config points at another provider), `BATON_CODEX_EFFORT` (default `medium`).
-- Optional: Gemini CLI logged in with Google (no API key) enables `mcp__baton__gemini`, a read-only second reviewer.
 - Haiku and Sonnet agents run with `effort: medium`.
 
 Token and cost figures are client-side estimates, not your bill.

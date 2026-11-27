@@ -1,9 +1,9 @@
-export type Owner = 'opus' | 'sonnet' | 'haiku' | 'codex' | 'gemini' | 'muse'
+export type Owner = 'opus' | 'sonnet' | 'haiku' | 'codex' | 'muse'
 export type StepStatus = 'todo' | 'running' | 'done' | 'failed' | 'skipped'
 export type PlanStep = { title: string; owner: Owner; status: StepStatus; note?: string; startedAt?: number; endedAt?: number }
 // one external worker run started through the baton tools
 export type Ext = {
-  id: string; who: 'codex' | 'gemini' | 'muse'; step?: number; task: string; startedAt: number; endedAt?: number; ok?: boolean
+  id: string; who: 'codex' | 'muse'; step?: number; task: string; startedAt: number; endedAt?: number; ok?: boolean
   now: string; files: string[]; planned: string[]; cmds: number; tools: number; tokensIn: number; tokensOut: number; model?: string
 }
 // one Claude subagent, as $.agent.list reports it

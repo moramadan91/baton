@@ -8,7 +8,6 @@
 | Haiku (`baton:runner`) | commands, tests, builds, searches |
 | Sonnet (`baton:worker`) | multi-step chores that need judgement |
 | Codex (OpenAI) | writes and fixes code, reviews diffs read-only |
-| Gemini (Google, `mcp__baton__gemini`) | read-only second review of plans and diffs, next to Codex |
 | Muse Code (Meta, `mcp__baton__muse`) | implements on independent files in parallel with Codex, takes over when Codex is out of quota, and cross-reviews Codex changes |
 
 Workers default to **medium** effort. The Haiku and Sonnet agents set `effort: medium`, and Codex and Muse have environment overrides. Use `effort: "low"` for mechanical Muse edits. For the main chat, set `"effortLevel": "medium"` in `~/.claude/settings.json`.
@@ -34,7 +33,6 @@ Or drop [`Baton-Start.md`](Baton-Start.md) into any chat: Claude installs Baton 
 
 ## Needs
 - [Codex CLI](https://github.com/openai/codex) logged in with ChatGPT, on your PATH. No API keys.
-- Optional: [Gemini CLI](https://github.com/google-gemini/gemini-cli) logged in with your Google account, for the Gemini reviewer. No API key (Baton unsets `GEMINI_API_KEY`/`GOOGLE_API_KEY` and runs it in read-only plan mode).
 - Optional Muse Code CLI logged in with your Meta account. Baton uses `~/.local/bin/muse` unless `BATON_MUSE_BIN` is set. `BATON_MUSE_MODEL` and `BATON_MUSE_EFFORT` set the model and default effort.
 - A Claude Code build that loads plugin hooks modules (the pane and the Codex tool).
 

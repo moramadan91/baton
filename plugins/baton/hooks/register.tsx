@@ -10,7 +10,7 @@ const fresh: Run = { on: false, title: '', startedAt: 0, steps: [], ext: [], sub
 const run = atom({ plugin: 'baton', key: 'run' } as const, fresh, { shape: 'run-2' })
 const tick = atom({ plugin: 'baton', key: 'tick' } as const, 0)
 
-const EXTERNAL = ['codex', 'gemini', 'muse'] as const
+const EXTERNAL = ['codex', 'muse'] as const
 const OWNERS: Owner[] = ['opus', 'sonnet', 'haiku', ...EXTERNAL]
 const mainUse: Record<string, Use> = {} // main thread, per model
 const agentUse = new Map<string, { model: string; u: Use }[]>() // subagent id -> its usage, kept after it ends
@@ -207,30 +207,6 @@ async function runMuse($: EngineInterface, a: any) {
   ].join('\n') }
 }
 
-// Gemini reviews/plans read-only: one headless `gemini --approval-mode plan` run on the user's Google login.
-async function runGemini($: EngineInterface, a: any) {
-  const cwd = String(a.cwd || '')
-  if (!cwd.startsWith('/')) return { result: 'cwd must be the absolute project path.' }
-  const id = await startExt($, 'gemini', { ...a, files: [] })
-  await patchExt($, id, () => ({ now: 'thinking', model: 'gemini' }))
-  const argv = ['env', '-u', 'GEMINI_API_KEY', '-u', 'GOOGLE_API_KEY', 'GEMINI_CLI_TRUST_WORKSPACE=true',
-    'gemini', '--approval-mode', 'plan', '-p', String(a.task)]
-  let out = '', err = '', code: number | null = null
-  try {
-    const p = $.process.spawn({ argv, cwd, input: '' })
-    while (true) {
-      const n = await p.next()
-      if (n.done) { code = n.value.code; break }
-      if (n.value.stream === 'stderr') err = (err + n.value.text).slice(-3000)
-      else out += n.value.text
-    }
-  } catch (e: any) { err += `\n${e?.message || e}` }
-  const ok = code === 0
-  await patchExt($, id, () => ({ endedAt: Date.now(), ok, now: ok ? 'finished' : `failed (exit ${code})` }))
-  await setStep($, a.step, ok ? 'done' : 'failed')
-  return { result: ok ? `Gemini finished.\nReport:\n${out.trim() || '(empty)'}` : `Gemini FAILED (exit ${code}). stderr tail:\n${err.slice(-1200)}` }
-}
-
 // Subagents, usage and limits: read every 2 s while Baton is on.
 async function poll($: EngineInterface, withUsage: boolean) {
   const agents = await $.agent.list()
@@ -288,7 +264,7 @@ export const register: Register = on => {
     const step = { type: 'integer', description: 'The plan step this run belongs to (1-based); the pane marks it running, then done or failed.' }
     await $.tool.register({
       name: 'plan',
-      description: 'Baton: set the plan shown in the live pane (replaces the current one). Each step has an owner: opus (decisions, review), sonnet (multi-step chores), haiku (commands, tests, reads), codex (writes code), gemini (read-only review), muse (writes code in parallel with codex, or reviews).',
+      description: 'Baton: set the plan shown in the live pane (replaces the current one). Each step has an owner: opus (decisions, review), sonnet (multi-step chores), haiku (commands, tests, reads), codex (writes code), muse (writes code in parallel with codex, or reviews).',
       inputSchema: { type: 'object', required: ['title', 'steps'], properties: {
         title: { type: 'string' },
         steps: { type: 'array', items: { type: 'object', required: ['title', 'owner'], properties: { title: { type: 'string' }, owner: { type: 'string', enum: OWNERS } } } },
@@ -306,15 +282,6 @@ export const register: Register = on => {
         task: { type: 'string', description: 'The full ticket: goal, files, constraints, done criteria, "report what you changed".' },
         cwd: { type: 'string', description: 'Absolute project path.' },
         files: { type: 'array', items: { type: 'string' }, description: 'Files (or folders) Codex may write, relative to cwd.' },
-        step,
-      } },
-    })
-    await $.tool.register({
-      name: 'gemini',
-      description: 'Baton: have Gemini (Google, the user\'s Gemini CLI login) review code, plans or diffs read-only (it edits nothing). Second opinion next to Codex. Blocks until it ends and returns its report.',
-      inputSchema: { type: 'object', required: ['task', 'cwd'], properties: {
-        task: { type: 'string', description: 'What to review or answer, with the files to read and what to report.' },
-        cwd: { type: 'string', description: 'Absolute project path.' },
         step,
       } },
     })
@@ -367,7 +334,6 @@ export const register: Register = on => {
     return { result: r.endedAt ? `All steps finished. Give the user this report:\n${reportText(r)}` : 'ok' }
   })
   on('tool.run', { tool: 'mcp__baton__codex' }, ($, e) => runCodex($, e))
-  on('tool.run', { tool: 'mcp__baton__gemini' }, ($, e) => runGemini($, e))
   on('tool.run', { tool: 'mcp__baton__muse' }, ($, e) => runMuse($, e))
 
   on('agent.spawn', async ($, e, next) => {

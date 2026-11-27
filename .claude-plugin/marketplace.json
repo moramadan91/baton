@@ -7,7 +7,7 @@
     {
       "name": "baton",
       "source": "./plugins/baton",
-      "description": "One model conducts, the rest play: Opus plans, Haiku and Sonnet run the chores, Codex writes and reviews code, Gemini reviews read-only, with a live progress pane"
+      "description": "One model conducts, the rest play: Opus plans, Haiku and Sonnet run the chores, Codex and Muse write and review code, with a live progress pane"
     }
   ]
 }
