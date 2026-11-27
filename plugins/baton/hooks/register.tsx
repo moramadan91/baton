@@ -445,10 +445,10 @@ export const register: Register = on => {
               <Text><Text color={r.ollama.up ? 'success' : 'error'}>Ollama {r.ollama.up ? 'up' : 'down'}</Text>{r.ollama.up && r.ollama.loaded.length > 0 && <Text dimColor> · {r.ollama.loaded.join(', ')} loaded</Text>}</Text>
             )}
             {(r.local ?? []).filter(x => x.status === 'running' || x.status === 'queued').map(x => (
-              <Text wrap="truncate-end"><Text color="warning">▶ {x.worker[0]!.toUpperCase() + x.worker.slice(1)}</Text> <Text dimColor mono tabular>{clock(now - x.startedAt)}</Text> {x.project}</Text>
+              <Text wrap="truncate-end"><Text color="warning">▶ Aider</Text><Text dimColor> {x.model}</Text> <Text dimColor mono tabular>{clock(now - x.startedAt)}</Text> {x.project}</Text>
             ))}
             {(r.local ?? []).filter(x => x.status !== 'running' && x.status !== 'queued').slice(0, 3).map(x => (
-              <Text dimColor wrap="truncate-end"><Text color={x.status === 'completed' ? 'success' : 'error'}>{x.status === 'completed' ? '✓' : '✗'}</Text> {x.worker[0]!.toUpperCase() + x.worker.slice(1)} {clock((x.dur ?? 0) * 1000)} · {x.files} files{x.oos ? ` · ${x.oos} out of scope` : ''} · {x.project}{!x.reviewed && !x.cleaned ? ' · needs review' : ''}</Text>
+              <Text dimColor wrap="truncate-end"><Text color={x.status === 'completed' ? 'success' : 'error'}>{x.status === 'completed' ? '✓' : '✗'}</Text> Aider {x.model} {clock((x.dur ?? 0) * 1000)} · {x.files} files{x.oos ? ` · ${x.oos} out of scope` : ''} · {x.project}{!x.reviewed && !x.cleaned ? ' · needs review' : ''}</Text>
             ))}
           </Box>
         )}
