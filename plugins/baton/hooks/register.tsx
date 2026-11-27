@@ -17,6 +17,7 @@ const agentUse = new Map<string, { model: string; u: Use }[]>() // subagent id -
 const stepOf = new Map<string, number>() // subagent id -> plan step (from "S3 ..." in its description)
 const locks = new Set<string>()
 const handedOff = new Set<string>()
+let lastLocal = 0, lastOl = 0 // local jobs refresh <= every 4 s, Ollama <= every 10 s
 
 const fam = (m = '') => (/muse/i.test(m) ? 'Muse' : /opus/i.test(m) ? 'Opus' : /sonnet/i.test(m) ? 'Sonnet' : /haiku/i.test(m) ? 'Haiku' : /gpt|codex|o\d/i.test(m) ? 'Codex' : m || '?')
 const ownerName = (o: Owner) => o[0]!.toUpperCase() + o.slice(1)
@@ -246,11 +247,37 @@ async function poll($: EngineInterface, withUsage: boolean) {
   for (const [m, u] of Object.entries(mainUse)) merge(m, u)
   for (const list of agentUse.values()) for (const { model, u } of list) merge(model, u)
   const usage = withUsage ? await $.session.usage() : undefined
+  const t0 = Date.now()
+  let lj: Run['local'], ol: Run['ollama']
+  if (t0 - lastLocal >= 4000) {
+    lastLocal = t0
+    try {
+      const dir = `${(await $.env.get('HOME')) || '/tmp'}/.local/state/coding-delegator/jobs`
+      const top = (await $.fs.list(dir)).filter(e => e.name.endsWith('.json')).sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, 5)
+      const out: NonNullable<Run['local']> = []
+      for (const e of top) {
+        try {
+          const j = JSON.parse(await $.fs.read(`${dir}/${e.name}`))
+          out.push({ id: String(j.job_id), status: String(j.status), worker: String(j.worker), model: String(j.model || ''), project: base(String(j.project_root || '')), startedAt: Number(j.created_at) * 1000, ...(j.duration_seconds != null ? { dur: Number(j.duration_seconds) } : {}), files: (j.changed_files || []).length, oos: (j.out_of_scope || []).length, reviewed: !!j.reviewed, cleaned: !!j.cleaned })
+        } catch {}
+      }
+      lj = out
+    } catch { lj = [] }
+  }
+  if (t0 - lastOl >= 10000) {
+    lastOl = t0
+    try {
+      const ps = await $.process.run(['curl', '-fsS', '-m', '1', 'http://127.0.0.1:11434/api/ps'])
+      const ms = ps.exitCode === 0 ? JSON.parse(ps.stdout).models : null
+      ol = { up: ps.exitCode === 0, loaded: Array.isArray(ms) ? ms.map((m: any) => String(m.name || m.model || '')) : [] }
+    } catch { ol = { up: false, loaded: [] } }
+  }
   await update($, run, r => {
     const keep = r.subs.filter(s => !subs.some(n => n.id === s.id)).map(s => (s.endedAt ? s : { ...s, endedAt: Date.now(), status: 'completed' }))
     return {
       ...r, subs: [...keep, ...subs].slice(-8), byModel, at: Date.now(),
       ...(usage ? { limits: usage.rateLimits.map(l => ({ kind: l.kind, pct: l.percentUsed, resetsAt: l.resetsAt })), costUsd: usage.cost?.usd } : {}),
+      ...(lj !== undefined ? { local: lj } : {}), ...(ol !== undefined ? { ollama: ol } : {}),
     }
   })
 }
@@ -441,6 +468,21 @@ export const register: Register = on => {
             ))}
             {subsDone.map(s => (
               <Text dimColor wrap="truncate-end"><Text color="success">✓</Text> {s.model} {s.type.replace(/^baton:/, '')} {clock((s.endedAt ?? now) - s.startedAt)} · {s.label}</Text>
+            ))}
+          </Box>
+        )}
+
+        {(r.ollama || (r.local?.length ?? 0) > 0) && (
+          <Box flexDirection="column">
+            <Text bold>Local (Ollama)</Text>
+            {r.ollama && (
+              <Text><Text color={r.ollama.up ? 'success' : 'error'}>Ollama {r.ollama.up ? 'up' : 'down'}</Text>{r.ollama.up && r.ollama.loaded.length > 0 && <Text dimColor> · {r.ollama.loaded.join(', ')} loaded</Text>}</Text>
+            )}
+            {(r.local ?? []).filter(x => x.status === 'running' || x.status === 'queued').map(x => (
+              <Text wrap="truncate-end"><Text color="warning">▶ {x.worker[0]!.toUpperCase() + x.worker.slice(1)}</Text> <Text dimColor mono tabular>{clock(now - x.startedAt)}</Text> {x.project}</Text>
+            ))}
+            {(r.local ?? []).filter(x => x.status !== 'running' && x.status !== 'queued').slice(0, 3).map(x => (
+              <Text dimColor wrap="truncate-end"><Text color={x.status === 'completed' ? 'success' : 'error'}>{x.status === 'completed' ? '✓' : '✗'}</Text> {x.worker[0]!.toUpperCase() + x.worker.slice(1)} {clock((x.dur ?? 0) * 1000)} · {x.files} files{x.oos ? ` · ${x.oos} out of scope` : ''} · {x.project}{!x.reviewed && !x.cleaned ? ' · needs review' : ''}</Text>
             ))}
           </Box>
         )}

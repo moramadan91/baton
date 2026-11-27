@@ -15,6 +15,9 @@ export type Run = {
   main: Use & { turns: number; model: string }; byModel: Record<string, Use>; limits: Limit[]; costUsd?: number; at: number
   // this task: limits and per-model tokens when the plan was set, limits when its last step ended
   endedAt?: number; limits0: Limit[]; limits1?: Limit[]; base: Record<string, Use>; cost0?: number; cost1?: number
+  // local Coding Delegator jobs and Ollama status; optional so old atoms still fit
+  local?: { id: string; status: string; worker: string; model: string; project: string; startedAt: number; dur?: number; files: number; oos: number; reviewed: boolean; cleaned: boolean }[]
+  ollama?: { up: boolean; loaded: string[] }
 }
 
 declare module 'claude-code' {

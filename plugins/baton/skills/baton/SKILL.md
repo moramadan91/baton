@@ -28,6 +28,7 @@ The plan tool returns the Claude limits before the task: tell the user them in o
 - **Review**: have Codex review Muse's changes with `files: []` and a task that starts "review only, edit nothing". Have Muse review Codex's changes in `mode: "review"`. Give either worker the diff or files to judge.
 - **Gemini**: call `mcp__baton__gemini` with `{ task, cwd, step }` for a read-only review or second opinion; it can run in parallel with Codex.
 - **Muse** uses `mcp__baton__muse` with `{ task, cwd, step }`, plus `files` for writes. Use `mode: "review"` for read-only work. Write mode is the default and shares file locks with Codex.
+- **Local** (free, private, slower ~10-60 s per edit): for a small scoped edit hand the step to the local model with MCP tool `mcp__coding-delegator__delegate_coding` (worker auto = Aider on qwen2.5-coder:14b), then `review_changes`, copy the wanted changes, `cleanup_job`. Baton shows these jobs under "Local (Ollama)" in the pane.
 - **Haiku / Sonnet**: use the Agent tool with `subagent_type` `baton:runner` (Haiku) or `baton:worker` (Sonnet). Start the `description` with the step number, like `S3 run tests`. The pane then tracks it.
 - For your own steps, call `mcp__baton__step` with `running`, then `done`. Delegated steps update themselves.
 
