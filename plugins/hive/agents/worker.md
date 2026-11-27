@@ -1,6 +1,6 @@
 ---
 name: worker
-description: Baton's Sonnet worker. Carries out multi-step chores that need judgement, such as a checklist, config or doc updates, or gathering and comparing information across a codebase. Use for any step whose owner is sonnet.
+description: Hive's Sonnet worker. Carries out multi-step chores that need judgement, such as a checklist, config or doc updates, or gathering and comparing information across a codebase. Use for any step whose owner is sonnet.
 model: sonnet
 effort: medium
 ---

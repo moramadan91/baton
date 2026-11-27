@@ -1,6 +1,6 @@
 {
-  "name": "baton",
-  "version": "0.6.2",
+  "name": "hive",
+  "version": "0.7.0",
   "description": "Opus plans, Sonnet and Haiku run commands, Codex and Muse Code write and review code. A live pane shows progress, tokens and usage limits.",
   "license": "MIT",
   "types": "./types/index.d.ts"

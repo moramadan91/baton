@@ -1,12 +1,12 @@
 {
-  "name": "baton",
+  "name": "hive",
   "owner": {
     "name": "moramadan91"
   },
   "plugins": [
     {
-      "name": "baton",
-      "source": "./plugins/baton",
+      "name": "hive",
+      "source": "./plugins/hive",
       "description": "One model conducts, the rest play: Opus plans, Haiku and Sonnet run the chores, Codex and Muse write and review code, with a live progress pane"
     }
   ]

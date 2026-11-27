@@ -3,12 +3,12 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { Ext, Owner, PlanStep, Run, StepStatus, Sub, Use } from '../types'
 
-const PANE = 'baton'
-const TITLE = 'Baton'
+const PANE = 'hive'
+const TITLE = 'Hive'
 const zero = (): Use => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })
 const fresh: Run = { on: false, title: '', startedAt: 0, steps: [], ext: [], subs: [], main: { ...zero(), turns: 0, model: '' }, byModel: {}, limits: [], at: 0, limits0: [], base: {} }
-const run = atom({ plugin: 'baton', key: 'run' } as const, fresh, { shape: 'run-2' })
-const tick = atom({ plugin: 'baton', key: 'tick' } as const, 0)
+const run = atom({ plugin: 'hive', key: 'run' } as const, fresh, { shape: 'run-2' })
+const tick = atom({ plugin: 'hive', key: 'tick' } as const, 0)
 
 const EXTERNAL = ['codex', 'muse'] as const
 const OWNERS: Owner[] = ['opus', 'sonnet', 'haiku', ...EXTERNAL]
@@ -61,7 +61,7 @@ function taskReport(r: Run) {
 function reportText(r: Run) {
   const t = taskReport(r), took = clock((r.endedAt ?? Date.now()) - r.startedAt)
   return [
-    `Baton task "${r.title}" ${r.endedAt ? 'finished' : 'so far'} in ${took}.`,
+    `Hive task "${r.title}" ${r.endedAt ? 'finished' : 'so far'} in ${took}.`,
     ...t.limits.map(l => `Claude ${l.name} limit: ${l.from ?? '?'}% -> ${l.to}% (${l.delta !== undefined ? `${l.delta >= 0 ? '+' : ''}${l.delta}%` : 'no reading before'})${l.resetsAt ? `, resets ${hhmm(l.resetsAt)}` : ''}`),
     ...t.used.map(([m, u]) => `${m}: ${k(u.input + u.cacheWrite)} in, ${k(u.cacheRead)} cached, ${k(u.output)} out`),
     ...t.ext.map(([m, x]) => `${m}: ${k(x.i)} in, ${k(x.o)} out (its own plan)`),
@@ -88,7 +88,7 @@ async function runCodex($: EngineInterface, a: any) {
   if (!cwd.startsWith('/')) return { result: 'cwd must be the absolute project path.' }
   const files: string[] = (a.files || []).map((f: string) => (f.startsWith('/') ? f : `${cwd.replace(/\/$/, '')}/${f}`))
   const home = (await $.env.get('HOME')) || '/tmp'
-  const lockDir = `${home}/.claude/baton/locks`
+  const lockDir = `${home}/.claude/hive/locks`
   const held: string[] = []
   await $.process.run(['mkdir', '-p', lockDir])
   for (const f of files) {
@@ -101,8 +101,8 @@ async function runCodex($: EngineInterface, a: any) {
     locks.add(f); held.push(l)
   }
   const id = await startExt($, 'codex', a)
-  const model = await $.env.get('BATON_CODEX_MODEL'), provider = await $.env.get('BATON_CODEX_PROVIDER')
-  const effort = (await $.env.get('BATON_CODEX_EFFORT')) || 'medium'
+  const model = await $.env.get('HIVE_CODEX_MODEL'), provider = await $.env.get('HIVE_CODEX_PROVIDER')
+  const effort = (await $.env.get('HIVE_CODEX_EFFORT')) || 'medium'
   const argv = ['codex', 'exec', '--json', '--skip-git-repo-check', '-s', 'workspace-write', '-C', cwd,
     ...(provider ? ['-c', `model_provider="${provider}"`] : []), ...(model ? ['-m', model] : []), '-c', `model_reasoning_effort=${effort}`, String(a.task)]
   let buf = '', err = '', last = '', changed = new Set<string>(), code: number | null = null
@@ -150,9 +150,9 @@ async function runMuse($: EngineInterface, a: any) {
   if (!cwd.startsWith('/')) return { result: 'cwd must be the absolute project path.' }
   if (!readonly && !Array.isArray(a.files)) return { result: 'files must be provided in write mode.' }
   const files: string[] = readonly ? [] : a.files.map((f: string) => (f.startsWith('/') ? f : `${cwd.replace(/\/$/, '')}/${f}`))
-  const home = (await $.env.get('HOME')) || '/tmp', lockDir = `${home}/.claude/baton/locks`
-  const bin = (await $.env.get('BATON_MUSE_BIN')) || `${home}/.local/bin/muse`
-  const effort = a.effort || (await $.env.get('BATON_MUSE_EFFORT')) || 'medium', model = await $.env.get('BATON_MUSE_MODEL')
+  const home = (await $.env.get('HOME')) || '/tmp', lockDir = `${home}/.claude/hive/locks`
+  const bin = (await $.env.get('HIVE_MUSE_BIN')) || `${home}/.local/bin/muse`
+  const effort = a.effort || (await $.env.get('HIVE_MUSE_EFFORT')) || 'medium', model = await $.env.get('HIVE_MUSE_MODEL')
   const argv = [bin, 'exec', '--json', '--workspace', cwd, '--no-foreign-personal-context', '--disable-approval', '--contributor-mode', 'off', '--reasoning-effort', effort,
     ...(model ? ['--model', model] : []), ...(readonly ? ['--disable-write', '--disable-shell'] : []), String(a.task)]
   const held = new Map<string, string>(), changed = new Set<string>()
@@ -207,7 +207,7 @@ async function runMuse($: EngineInterface, a: any) {
   ].join('\n') }
 }
 
-// Subagents, usage and limits: read every 2 s while Baton is on.
+// Subagents, usage and limits: read every 2 s while Hive is on.
 async function poll($: EngineInterface, withUsage: boolean) {
   const agents = await $.agent.list()
   const subs: Sub[] = []
@@ -260,11 +260,11 @@ async function poll($: EngineInterface, withUsage: boolean) {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'baton-pane', description: 'Show the Baton progress pane' })
+    await $.command.register({ name: 'hive-pane', description: 'Show the Hive progress pane' })
     const step = { type: 'integer', description: 'The plan step this run belongs to (1-based); the pane marks it running, then done or failed.' }
     await $.tool.register({
       name: 'plan',
-      description: 'Baton: set the plan shown in the live pane (replaces the current one). Each step has an owner: opus (decisions, review), sonnet (multi-step chores), haiku (commands, tests, reads), codex (writes code), muse (writes code in parallel with codex, or reviews).',
+      description: 'Hive: set the plan shown in the live pane (replaces the current one). Each step has an owner: opus (decisions, review), sonnet (multi-step chores), haiku (commands, tests, reads), codex (writes code), muse (writes code in parallel with codex, or reviews).',
       inputSchema: { type: 'object', required: ['title', 'steps'], properties: {
         title: { type: 'string' },
         steps: { type: 'array', items: { type: 'object', required: ['title', 'owner'], properties: { title: { type: 'string' }, owner: { type: 'string', enum: OWNERS } } } },
@@ -272,12 +272,12 @@ export const register: Register = on => {
     })
     await $.tool.register({
       name: 'step',
-      description: 'Baton: mark a plan step (1-based) running, done, failed or skipped, with an optional short note.',
+      description: 'Hive: mark a plan step (1-based) running, done, failed or skipped, with an optional short note.',
       inputSchema: { type: 'object', required: ['index', 'status'], properties: { index: { type: 'integer' }, status: { type: 'string', enum: ['running', 'done', 'failed', 'skipped'] }, note: { type: 'string' } } },
     })
     await $.tool.register({
       name: 'codex',
-      description: 'Baton: have Codex (OpenAI, the user\'s ChatGPT login) write or fix code. Blocks until Codex ends and returns its report, the files it changed and its tokens. The files listed are locked while it runs. Codex has no network.',
+      description: 'Hive: have Codex (OpenAI, the user\'s ChatGPT login) write or fix code. Blocks until Codex ends and returns its report, the files it changed and its tokens. The files listed are locked while it runs. Codex has no network.',
       inputSchema: { type: 'object', required: ['task', 'cwd', 'files'], properties: {
         task: { type: 'string', description: 'The full ticket: goal, files, constraints, done criteria, "report what you changed".' },
         cwd: { type: 'string', description: 'Absolute project path.' },
@@ -287,7 +287,7 @@ export const register: Register = on => {
     })
     await $.tool.register({
       name: 'muse',
-      description: 'Baton: have Muse Code (Meta, the user\'s Meta login) write or fix code (mode "write", default) or review read-only (mode "review"). Runs in parallel with Codex on different files. Blocks until it ends and returns its report, files changed and tokens.',
+      description: 'Hive: have Muse Code (Meta, the user\'s Meta login) write or fix code (mode "write", default) or review read-only (mode "review"). Runs in parallel with Codex on different files. Blocks until it ends and returns its report, files changed and tokens.',
       inputSchema: { type: 'object', required: ['task', 'cwd'], properties: {
         task: { type: 'string', description: 'The full ticket or what to review.' },
         cwd: { type: 'string', description: 'Absolute project path.' },
@@ -307,13 +307,13 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: 'baton-pane' }, async $ => {
+  on('command.run', { command: 'hive-pane' }, async $ => {
     await update($, run, r => ({ ...r, on: true }))
     await $.ui.open({ id: PANE, title: TITLE })
-    return { text: 'Baton pane opened.' }
+    return { text: 'Hive pane opened.' }
   })
 
-  on('tool.run', { tool: 'mcp__baton__plan' }, async ($, e) => {
+  on('tool.run', { tool: 'mcp__hive__plan' }, async ($, e) => {
     const a = e as any
     const steps: PlanStep[] = (a.steps || []).map((s: any) => ({ title: String(s.title), owner: OWNERS.includes(s.owner) ? s.owner : 'opus', status: 'todo' }))
     await poll($, true) // fresh limits and totals: the "before" snapshot of this task
@@ -325,16 +325,16 @@ export const register: Register = on => {
     await $.ui.open({ id: PANE, title: TITLE })
     const r = await read($, run)
     const lim = r.limits0.map(l => `${limName(l.kind)} ${l.pct}%`).join(', ')
-    return { result: `Plan set: ${steps.length} steps. Claude limits before this task: ${lim || 'no reading yet'}. Delegated steps update themselves; mark your own with mcp__baton__step. Tell the user these limits now.` }
+    return { result: `Plan set: ${steps.length} steps. Claude limits before this task: ${lim || 'no reading yet'}. Delegated steps update themselves; mark your own with mcp__hive__step. Tell the user these limits now.` }
   })
-  on('tool.run', { tool: 'mcp__baton__step' }, async ($, e) => {
+  on('tool.run', { tool: 'mcp__hive__step' }, async ($, e) => {
     const a = e as any
     await setStep($, a.index, a.status, a.note)
     const r = await read($, run)
     return { result: r.endedAt ? `All steps finished. Give the user this report:\n${reportText(r)}` : 'ok' }
   })
-  on('tool.run', { tool: 'mcp__baton__codex' }, ($, e) => runCodex($, e))
-  on('tool.run', { tool: 'mcp__baton__muse' }, ($, e) => runMuse($, e))
+  on('tool.run', { tool: 'mcp__hive__codex' }, ($, e) => runCodex($, e))
+  on('tool.run', { tool: 'mcp__hive__muse' }, ($, e) => runMuse($, e))
 
   on('agent.spawn', async ($, e, next) => {
     const r = await next(e)
@@ -356,14 +356,14 @@ export const register: Register = on => {
   })
 
   on('session.measure', async ($, e, next) => {
-    const t = Number(await $.env.get('BATON_HANDOFF_PCT')) || 95
+    const t = Number(await $.env.get('HIVE_HANDOFF_PCT')) || 95
     for (const l of (e as any).rateLimits || []) {
       if ((l.kind !== 'five_hour' && !String(l.kind).startsWith('seven_day')) || l.percentUsed < t) continue
       const key = `${l.kind}@${l.resetsAt ?? ''}`
       if (handedOff.has(key)) continue
       handedOff.add(key)
-      await $.session.append({ type: 'user', content: [{ type: 'text', text: `Baton limit guard: Claude's ${limName(l.kind)} limit is at ${l.percentUsed}%${l.resetsAt ? ` (resets ${hhmm(l.resetsAt)})` : ''}. Stop starting new work. Right now, in the current project root, write HANDOFF.md so Codex or Muse can continue without you: 1) the goal in the user's words, 2) what is done (with file paths), 3) what is left as numbered steps, each small enough for one agent run, 4) decisions made and constraints/rules to keep, 5) how to verify (commands, expected result), 6) open questions. Keep it under 150 lines. Then tell the user, in their language, that it is written and they can continue in that folder with \`muse "Read HANDOFF.md and continue from the first unfinished step"\` or \`codex "Read HANDOFF.md and continue from the first unfinished step"\`, and that you will review their work when the limit resets.` }] })
-      await $.ui.toast(`Baton: Claude ${limName(l.kind)} limit at ${l.percentUsed}% - writing HANDOFF.md`)
+      await $.session.append({ type: 'user', content: [{ type: 'text', text: `Hive limit guard: Claude's ${limName(l.kind)} limit is at ${l.percentUsed}%${l.resetsAt ? ` (resets ${hhmm(l.resetsAt)})` : ''}. Stop starting new work. Right now, in the current project root, write HANDOFF.md so Codex or Muse can continue without you: 1) the goal in the user's words, 2) what is done (with file paths), 3) what is left as numbered steps, each small enough for one agent run, 4) decisions made and constraints/rules to keep, 5) how to verify (commands, expected result), 6) open questions. Keep it under 150 lines. Then tell the user, in their language, that it is written and they can continue in that folder with \`muse "Read HANDOFF.md and continue from the first unfinished step"\` or \`codex "Read HANDOFF.md and continue from the first unfinished step"\`, and that you will review their work when the limit resets.` }] })
+      await $.ui.toast(`Hive: Claude ${limName(l.kind)} limit at ${l.percentUsed}% - writing HANDOFF.md`)
     }
     return next(e)
   })
@@ -385,7 +385,7 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column" gap={1}>
         <Box flexDirection="column">
-          <Text bold>Baton{r.title ? ` · ${r.title}` : ''}</Text>
+          <Text bold>Hive{r.title ? ` · ${r.title}` : ''}</Text>
           {r.startedAt > 0 && (
             <Text mono tabular>
               <Text color={r.endedAt ? 'success' : 'warning'}>⏱ {clock((r.endedAt ?? now) - r.startedAt)}</Text>
@@ -393,7 +393,7 @@ export const register: Register = on => {
               <Text dimColor> {r.endedAt ? 'finished' : 'running'}</Text>
             </Text>
           )}
-          {!r.on && <Text dimColor>Off. Type /baton to start.</Text>}
+          {!r.on && <Text dimColor>Off. Type /hive to start.</Text>}
         </Box>
 
         {r.steps.length > 0 && (
@@ -422,7 +422,7 @@ export const register: Register = on => {
             </Box>
           ))}
           {subsLive.map(s => (
-            <Text wrap="truncate-end"><Text color="warning">▶ {s.model}</Text><Text dimColor> {s.type.replace(/^baton:/, '')}{s.step ? ` S${s.step}` : ''}</Text> <Text dimColor mono tabular>{clock(now - s.startedAt)} · {k(s.tokens)}</Text> {s.label}</Text>
+            <Text wrap="truncate-end"><Text color="warning">▶ {s.model}</Text><Text dimColor> {s.type.replace(/^hive:/, '')}{s.step ? ` S${s.step}` : ''}</Text> <Text dimColor mono tabular>{clock(now - s.startedAt)} · {k(s.tokens)}</Text> {s.label}</Text>
           ))}
         </Box>
 
@@ -433,7 +433,7 @@ export const register: Register = on => {
               <Text dimColor wrap="truncate-end"><Text color={x.ok ? 'success' : 'error'}>{x.ok ? '✓' : '✗'}</Text> {ownerName(x.who)} {clock((x.endedAt ?? now) - x.startedAt)} · {x.files.length} files · {x.task}</Text>
             ))}
             {subsDone.map(s => (
-              <Text dimColor wrap="truncate-end"><Text color="success">✓</Text> {s.model} {s.type.replace(/^baton:/, '')} {clock((s.endedAt ?? now) - s.startedAt)} · {s.label}</Text>
+              <Text dimColor wrap="truncate-end"><Text color="success">✓</Text> {s.model} {s.type.replace(/^hive:/, '')} {clock((s.endedAt ?? now) - s.startedAt)} · {s.label}</Text>
             ))}
           </Box>
         )}

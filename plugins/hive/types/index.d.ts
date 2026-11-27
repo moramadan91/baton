@@ -1,7 +1,7 @@
 export type Owner = 'opus' | 'sonnet' | 'haiku' | 'codex' | 'muse'
 export type StepStatus = 'todo' | 'running' | 'done' | 'failed' | 'skipped'
 export type PlanStep = { title: string; owner: Owner; status: StepStatus; note?: string; startedAt?: number; endedAt?: number }
-// one external worker run started through the baton tools
+// one external worker run started through the hive tools
 export type Ext = {
   id: string; who: 'codex' | 'muse'; step?: number; task: string; startedAt: number; endedAt?: number; ok?: boolean
   now: string; files: string[]; planned: string[]; cmds: number; tools: number; tokensIn: number; tokensOut: number; model?: string
@@ -22,6 +22,6 @@ export type Run = {
 
 declare module 'claude-code' {
   interface PluginState {
-    baton: { run: Shaped<Run>; tick: number }
+    hive: { run: Shaped<Run>; tick: number }
   }
 }
