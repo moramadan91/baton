@@ -1,6 +1,6 @@
 ---
 name: hive
-description: Turn on the Hive workflow for this chat. You (the main model) plan, decide and review. Haiku and Sonnet subagents run commands and multi-step chores. Codex and Muse write, fix and review code. A live side pane shows the plan, who is working on what, tokens per model and the usage limits. Use when the user types /hive, or says "hive", "شغّل باتون" or "اشتغل بالطريقة دي".
+description: Turn on the Hive workflow for this chat. You (the main model) plan, decide and review. Haiku and Sonnet subagents run commands and multi-step chores. Codex and Muse write, fix and review code. A live side pane shows the plan, who is working on what, tokens per model and the usage limits. Use when the user types /hive, or says "hive", "شغّل هايف" or "اشتغل بالطريقة دي".
 ---
 
 # Hive
