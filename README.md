@@ -1,5 +1,7 @@
 # Hive
 
+**English** · [العربية](README.ar.md)
+
 **One model conducts. The rest play.** Hive is a Claude Code plugin that splits one task across several models, so your Claude tokens go to planning and review, and a live pane beside the chat shows who is doing what.
 
 ## How it works
