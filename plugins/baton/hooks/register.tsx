@@ -10,13 +10,14 @@ const fresh: Run = { on: false, title: '', startedAt: 0, steps: [], ext: [], sub
 const run = atom({ plugin: 'baton', key: 'run' } as const, fresh, { shape: 'run-2' })
 const tick = atom({ plugin: 'baton', key: 'tick' } as const, 0)
 
-const OWNERS: Owner[] = ['opus', 'sonnet', 'haiku', 'codex', 'gemini']
+const EXTERNAL = ['codex', 'gemini', 'muse'] as const
+const OWNERS: Owner[] = ['opus', 'sonnet', 'haiku', ...EXTERNAL]
 const mainUse: Record<string, Use> = {} // main thread, per model
 const agentUse = new Map<string, { model: string; u: Use }[]>() // subagent id -> its usage, kept after it ends
 const stepOf = new Map<string, number>() // subagent id -> plan step (from "S3 ..." in its description)
 const locks = new Set<string>()
 
-const fam = (m = '') => (/opus/i.test(m) ? 'Opus' : /sonnet/i.test(m) ? 'Sonnet' : /haiku/i.test(m) ? 'Haiku' : /gpt|codex|o\d/i.test(m) ? 'Codex' : m || '?')
+const fam = (m = '') => (/muse/i.test(m) ? 'Muse' : /opus/i.test(m) ? 'Opus' : /sonnet/i.test(m) ? 'Sonnet' : /haiku/i.test(m) ? 'Haiku' : /gpt|codex|o\d/i.test(m) ? 'Codex' : m || '?')
 const ownerName = (o: Owner) => o[0]!.toUpperCase() + o.slice(1)
 const add = (a: Use, u: any) => ({ input: a.input + (u.input_tokens || 0), output: a.output + (u.output_tokens || 0), cacheRead: a.cacheRead + (u.cache_read_input_tokens || u.cached_input_tokens || u.cached || 0), cacheWrite: a.cacheWrite + (u.cache_creation_input_tokens || 0) })
 const k = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(n >= 1e4 ? 0 : 1)}k` : String(n))
@@ -49,7 +50,7 @@ const limName = (kind: string) => (kind === 'five_hour' ? '5-hour' : kind === 's
 // what this task cost: limits before and now/after, tokens per model since the plan was set
 function taskReport(r: Run) {
   const used = Object.entries(r.byModel).map(([m, u]) => [m, sub(u, r.base[m])] as const).filter(([, u]) => u.input + u.output + u.cacheRead + u.cacheWrite > 0)
-  const ext = (['codex', 'gemini'] as const).map(w => [w === 'codex' ? 'Codex' : 'Gemini', r.ext.filter(x => x.who === w).reduce((a, x) => ({ i: a.i + x.tokensIn, o: a.o + x.tokensOut }), { i: 0, o: 0 })] as const).filter(([, t]) => t.i + t.o > 0)
+  const ext = EXTERNAL.map(w => [ownerName(w), r.ext.filter(x => x.who === w).reduce((a, x) => ({ i: a.i + x.tokensIn, o: a.o + x.tokensOut }), { i: 0, o: 0 })] as const).filter(([, t]) => t.i + t.o > 0)
   const after = r.limits1 ?? r.limits
   const limits = after.map(l => { const b = r.limits0.find(x => x.kind === l.kind); return { name: limName(l.kind), from: b?.pct, to: l.pct, delta: b ? Math.round((l.pct - b.pct) * 10) / 10 : undefined, resetsAt: l.resetsAt } })
   const cost = r.cost1 ?? r.costUsd, cost0 = r.cost0
@@ -90,10 +91,10 @@ async function runCodex($: EngineInterface, a: any) {
   await $.process.run(['mkdir', '-p', lockDir])
   for (const f of files) {
     const l = `${lockDir}/${f.replace(/[^a-zA-Z0-9]+/g, '_').slice(-120)}`
-    const r = await $.process.run(['mkdir', l])
-    if (locks.has(f) || r.exitCode !== 0) {
+    if (locks.has(f) || (await $.process.run(['mkdir', l])).exitCode !== 0) {
+      for (const acquired of files.slice(0, held.length)) locks.delete(acquired)
       for (const h of held) await $.process.run(['rmdir', h])
-      return { result: `LOCKED: ${f} is being written by another Codex run. Wait for it or pick other files.` }
+      return { result: `LOCKED: ${f} is being written by another worker. Wait for it or pick other files.` }
     }
     locks.add(f); held.push(l)
   }
@@ -138,6 +139,69 @@ async function runCodex($: EngineInterface, a: any) {
     `Files changed: ${[...changed].join(', ') || 'none reported'}`,
     `Tokens: ${x?.tokensIn ?? 0} in / ${x?.tokensOut ?? 0} out`,
     'Report:', last || '(no final message)',
+  ].join('\n') }
+}
+
+// Muse writes code or reviews read-only, streaming its JSONL events into the pane.
+async function runMuse($: EngineInterface, a: any) {
+  const cwd = String(a.cwd || ''), readonly = a.mode === 'review'
+  if (!cwd.startsWith('/')) return { result: 'cwd must be the absolute project path.' }
+  if (!readonly && !Array.isArray(a.files)) return { result: 'files must be provided in write mode.' }
+  const files: string[] = readonly ? [] : a.files.map((f: string) => (f.startsWith('/') ? f : `${cwd.replace(/\/$/, '')}/${f}`))
+  const home = (await $.env.get('HOME')) || '/tmp', lockDir = `${home}/.claude/baton/locks`
+  const bin = (await $.env.get('BATON_MUSE_BIN')) || `${home}/.local/bin/muse`
+  const effort = a.effort || (await $.env.get('BATON_MUSE_EFFORT')) || 'medium', model = await $.env.get('BATON_MUSE_MODEL')
+  const argv = [bin, 'exec', '--json', '--workspace', cwd, '--no-foreign-personal-context', '--disable-approval', '--contributor-mode', 'off', '--reasoning-effort', effort,
+    ...(model ? ['--model', model] : []), ...(readonly ? ['--disable-write', '--disable-shell'] : []), String(a.task)]
+  const held = new Map<string, string>(), changed = new Set<string>()
+  let id: string, buf = '', err = '', text = '', last = '', failure = '', code: number | null = null
+  try {
+    if (files.length) await $.process.run(['mkdir', '-p', lockDir])
+    for (const f of files) {
+      const l = `${lockDir}/${f.replace(/[^a-zA-Z0-9]+/g, '_').slice(-120)}`
+      if (locks.has(f) || (await $.process.run(['mkdir', l])).exitCode !== 0) return { result: `LOCKED: ${f} is being written by another worker. Wait for it or pick other files.` }
+      locks.add(f); held.set(f, l)
+    }
+    id = await startExt($, 'muse', readonly ? { ...a, files } : a)
+    try {
+      const p = $.process.spawn({ argv, cwd, input: '' })
+      while (true) {
+        const n = await p.next()
+        if (n.done) buf += '\n'
+        else if (n.value.stream === 'stderr') { err = (err + n.value.text).slice(-3000); continue }
+        else buf += n.value.text
+        const lines = buf.split('\n'); buf = lines.pop() || ''
+        for (const line of lines) {
+          let ev: any; try { ev = JSON.parse(line) } catch { continue }
+          const type = ev?.payload_type, payload = ev?.payload || {}
+          if (type === 'run.output.delta') { text += payload.text || ''; await patchExt($, id, () => ({ now: short(text.slice(-50), 50) })) }
+          else if (typeof type === 'string' && type.includes('tool')) {
+            const path = [payload.edit_facts?.path, payload.path, payload.file_path].find(v => typeof v === 'string')
+            if (typeof path === 'string') changed.add(path)
+            await patchExt($, id, () => ({ now: short(`${payload.edit_facts?.tool_name || payload.name || payload.tool_name || type}`, 40), files: [...changed] }))
+          } else if (type === 'run.usage') {
+            const models = payload.models || []
+            await patchExt($, id, x => ({ tokensIn: models.reduce((n: number, m: any) => n + (m.input_tokens || 0), x.tokensIn), tokensOut: models.reduce((n: number, m: any) => n + (m.output_tokens || 0) + (m.reasoning_tokens || 0), x.tokensOut), model: models[0]?.model || 'muse' }))
+          } else if (type === 'run.terminal.completed') {
+            last = payload.text || text
+            if (payload.terminal !== 'completed') failure = String(payload.reason || payload.terminal || 'unknown terminal status')
+          }
+        }
+        if (n.done) { code = n.value.code; break }
+      }
+    } catch (e: any) { err += `\n${e?.message || e}` }
+  } finally {
+    for (const [f, l] of held) { locks.delete(f); await $.process.run(['rmdir', l]) }
+  }
+  const ok = code === 0 && !failure
+  await patchExt($, id, () => ({ endedAt: Date.now(), ok, now: ok ? 'finished' : failure ? `failed (${short(failure, 40)})` : `failed (exit ${code})` }))
+  await setStep($, a.step, ok ? 'done' : 'failed')
+  const x = (await read($, run)).ext.find(e => e.id === id)
+  return { result: [
+    ok ? 'Muse finished.' : `Muse FAILED (exit ${code})${failure ? `: ${failure}` : ''}. stderr tail:\n${err.slice(-1200)}`,
+    `Files changed: ${[...changed].join(', ') || 'none reported'}`,
+    `Tokens: ${x?.tokensIn ?? 0} in / ${x?.tokensOut ?? 0} out`,
+    'Report:', last || text || '(no final message)',
   ].join('\n') }
 }
 
@@ -196,7 +260,7 @@ export const register: Register = on => {
     const step = { type: 'integer', description: 'The plan step this run belongs to (1-based); the pane marks it running, then done or failed.' }
     await $.tool.register({
       name: 'plan',
-      description: 'Baton: set the plan shown in the live pane (replaces the current one). Each step has an owner: opus (decisions, review), sonnet (multi-step chores), haiku (commands, tests, reads), codex (writes code).',
+      description: 'Baton: set the plan shown in the live pane (replaces the current one). Each step has an owner: opus (decisions, review), sonnet (multi-step chores), haiku (commands, tests, reads), codex (writes code), gemini (read-only review), muse (writes code in parallel with codex, or reviews).',
       inputSchema: { type: 'object', required: ['title', 'steps'], properties: {
         title: { type: 'string' },
         steps: { type: 'array', items: { type: 'object', required: ['title', 'owner'], properties: { title: { type: 'string' }, owner: { type: 'string', enum: OWNERS } } } },
@@ -223,6 +287,18 @@ export const register: Register = on => {
       inputSchema: { type: 'object', required: ['task', 'cwd'], properties: {
         task: { type: 'string', description: 'What to review or answer, with the files to read and what to report.' },
         cwd: { type: 'string', description: 'Absolute project path.' },
+        step,
+      } },
+    })
+    await $.tool.register({
+      name: 'muse',
+      description: 'Baton: have Muse Code (Meta, the user\'s Meta login) write or fix code (mode "write", default) or review read-only (mode "review"). Runs in parallel with Codex on different files. Blocks until it ends and returns its report, files changed and tokens.',
+      inputSchema: { type: 'object', required: ['task', 'cwd'], properties: {
+        task: { type: 'string', description: 'The full ticket or what to review.' },
+        cwd: { type: 'string', description: 'Absolute project path.' },
+        files: { type: 'array', items: { type: 'string' }, description: 'Files (or folders) Muse may write, relative to cwd. Required in write mode.' },
+        mode: { type: 'string', enum: ['write', 'review'] },
+        effort: { type: 'string', enum: ['low', 'medium', 'high'] },
         step,
       } },
     })
@@ -264,6 +340,7 @@ export const register: Register = on => {
   })
   on('tool.run', { tool: 'mcp__baton__codex' }, ($, e) => runCodex($, e))
   on('tool.run', { tool: 'mcp__baton__gemini' }, ($, e) => runGemini($, e))
+  on('tool.run', { tool: 'mcp__baton__muse' }, ($, e) => runMuse($, e))
 
   on('agent.spawn', async ($, e, next) => {
     const r = await next(e)
@@ -331,7 +408,7 @@ export const register: Register = on => {
           {!live.length && !subsLive.length && <Text dimColor>nobody · Opus is thinking or waiting</Text>}
           {live.map(x => (
             <Box flexDirection="column">
-              <Text wrap="truncate-end"><Text color="warning">▶ {x.who === 'gemini' ? 'Gemini' : 'Codex'}</Text>{x.step ? <Text dimColor> S{x.step}</Text> : ''} <Text dimColor mono tabular>{clock(now - x.startedAt)}</Text> {x.now}</Text>
+              <Text wrap="truncate-end"><Text color="warning">▶ {ownerName(x.who)}</Text>{x.step ? <Text dimColor> S{x.step}</Text> : ''} <Text dimColor mono tabular>{clock(now - x.startedAt)}</Text> {x.now}</Text>
               <Text dimColor mono tabular wrap="truncate-end">
                 {'  '}files {x.planned.length ? `${Math.min(x.files.length, x.planned.length)}/${x.planned.length}` : x.files.length} · {x.cmds} cmds · {k(x.tokensIn)} in / {k(x.tokensOut)} out
               </Text>
@@ -346,7 +423,7 @@ export const register: Register = on => {
           <Box flexDirection="column">
             <Text bold>Just finished</Text>
             {recent.map(x => (
-              <Text dimColor wrap="truncate-end"><Text color={x.ok ? 'success' : 'error'}>{x.ok ? '✓' : '✗'}</Text> {x.who === 'gemini' ? 'Gemini' : 'Codex'} {clock((x.endedAt ?? now) - x.startedAt)} · {x.files.length} files · {x.task}</Text>
+              <Text dimColor wrap="truncate-end"><Text color={x.ok ? 'success' : 'error'}>{x.ok ? '✓' : '✗'}</Text> {ownerName(x.who)} {clock((x.endedAt ?? now) - x.startedAt)} · {x.files.length} files · {x.task}</Text>
             ))}
             {subsDone.map(s => (
               <Text dimColor wrap="truncate-end"><Text color="success">✓</Text> {s.model} {s.type.replace(/^baton:/, '')} {clock((s.endedAt ?? now) - s.startedAt)} · {s.label}</Text>
@@ -379,7 +456,7 @@ export const register: Register = on => {
             const u = r.byModel[m]!, all = u.input + u.output + u.cacheRead + u.cacheWrite
             return <Text mono tabular wrap="truncate-end">{m.padEnd(7)}{k(u.input + u.cacheWrite).padStart(6)} in {k(u.cacheRead).padStart(6)} cached {k(u.output).padStart(6)} out <Text dimColor>{totalTok ? Math.round((all / totalTok) * 100) : 0}%</Text></Text>
           })}
-          {(['codex', 'gemini'] as const).map(who => { const t = extTok(who); return t.i + t.o > 0 ? <Text key={who} mono tabular>{(who === 'codex' ? 'Codex' : 'Gemini').padEnd(7)}{k(t.i).padStart(6)} in {''.padStart(13)}{k(t.o).padStart(6)} out <Text dimColor>own plan</Text></Text> : null })}
+          {EXTERNAL.map(who => { const t = extTok(who); return t.i + t.o > 0 ? <Text key={who} mono tabular>{ownerName(who).padEnd(7)}{k(t.i).padStart(6)} in {''.padStart(13)}{k(t.o).padStart(6)} out <Text dimColor>own plan</Text></Text> : null })}
           {r.costUsd !== undefined && <Text dimColor>Claude session ~${r.costUsd.toFixed(2)} (estimate, not your bill)</Text>}
         </Box>
 

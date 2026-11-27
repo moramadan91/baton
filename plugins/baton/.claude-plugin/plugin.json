@@ -1,7 +1,7 @@
 {
   "name": "baton",
-  "version": "0.3.0",
-  "description": "Opus plans, Sonnet and Haiku run the commands, Codex writes and reviews the code, Gemini gives a read-only second review; every model on medium effort; a live pane shows progress, tokens and your usage limits",
+  "version": "0.4.0",
+  "description": "Opus plans, Sonnet and Haiku run commands, Codex and Muse Code write and review code, and Gemini gives a read-only review. A live pane shows progress, tokens and usage limits.",
   "license": "MIT",
   "types": "./types/index.d.ts"
 }
